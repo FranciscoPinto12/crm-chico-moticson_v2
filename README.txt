@@ -32,3 +32,10 @@ ATUALIZAÇÃO FOLLOW-UPS E ALERTAS
 - Follow-ups vencidos têm prioridade na lista diária.
 - O botão “Ativar alertas das 10h” ativa notificações locais.
 - Por ser uma aplicação gratuita sem servidor, a notificação das 10h é apresentada quando a app estiver aberta ou quando for iniciada depois das 10h. Alertas exatos em segundo plano exigem um serviço de push/backend.
+
+ATUALIZAÇÃO — MODO CONDUÇÃO E HISTÓRICO
+- No modo condução é possível marcar imediatamente “Não atendeu”.
+- É possível ditar o resumo e guardar/concluir sem sair do modo condução.
+- O resumo é guardado nas notas do stand com data e hora.
+- Cada chamada e reunião fica registada no histórico individual do stand.
+- Em “Todos” foi adicionado filtro por estado comercial.

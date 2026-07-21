@@ -39,6 +39,10 @@ a.call{text-decoration:none;background:var(--green);color:#062117;font-weight:90
 .drive{position:fixed;inset:0;background:#050607;z-index:80;display:none;padding:28px}
 .drive.open{display:flex;flex-direction:column} .drive h2{font-size:42px;margin-top:50px}
 .drive .btn,.drive a{font-size:23px;padding:22px;text-align:center;text-decoration:none;border-radius:16px}
+.drive-actions{display:grid;grid-template-columns:1fr;gap:12px}
+.drive textarea{min-height:120px;font-size:20px}
+.drive .danger{background:var(--red);color:white}
+.history-item{border-top:1px solid var(--border);padding:10px 0}.history-item:first-child{border-top:0}
 small{color:var(--muted)}
 @media(min-width:700px){header{padding-left:28px;padding-right:28px}}
 </style>
@@ -74,6 +78,11 @@ small{color:var(--muted)}
     <input id="search" placeholder="Pesquisar nome, cidade, telefone, email..." oninput="renderAll()">
     <label>Distrito</label>
     <select id="district" onchange="renderAll()"><option value="">Todos</option></select>
+    <label>Estado</label>
+    <select id="statusFilter" onchange="renderAll()">
+      <option value="">Todos os estados</option>
+      <option>Por contactar</option><option>Contactado</option><option>Não atendeu</option><option>Follow-up</option><option>Reunião</option><option>Proposta</option><option>Cliente</option><option>Sem interesse</option>
+    </select>
   </div>
   <div id="allList"></div>
 </section>
@@ -108,9 +117,14 @@ small{color:var(--muted)}
   <h2 id="driveName">—</h2>
   <div id="driveMeta" class="muted" style="font-size:20px"></div>
   <div style="flex:1"></div>
-  <a id="driveCall" class="btn green" href="#">Ligar agora</a>
-  <button class="btn" onclick="driveDone()">Marcar como feita</button>
-  <button class="btn" onclick="driveNext()">Próximo stand</button>
+  <div class="drive-actions">
+    <a id="driveCall" class="btn green" href="#">Ligar agora</a>
+    <button class="btn danger" onclick="driveNoAnswer()">Não atendeu</button>
+    <button class="btn primary" id="driveMicBtn" onclick="startDriveDictation()">🎤 Ditar resumo</button>
+    <textarea id="driveSummary" placeholder="Dita o resumo da chamada..."></textarea>
+    <button class="btn green" onclick="saveDriveSummary()">Guardar resumo e concluir</button>
+    <button class="btn" onclick="driveNext()">Próximo stand</button>
+  </div>
 </div>
 
 <script>
@@ -188,6 +202,25 @@ function priority(s){
 }
 function todayCalls(){return db.daily.filter(x=>x.date===todayKey()).sort((a,b)=>a.order-b.order)}
 function standById(id){return db.stands.find(s=>String(s.id)===String(id))}
+function appendStandNote(s,text,label="Chamada"){
+ const clean=String(text||"").trim(); if(!clean)return;
+ const stamp=new Date().toLocaleString("pt-PT");
+ const entry=`[${stamp}] ${label}: ${clean}`;
+ s.notas=[s.notas||"",entry].filter(Boolean).join("\n\n");
+}
+function addInteraction(id,data={}){
+ const record={id,date:new Date().toISOString(),...data};
+ db.history.push(record);
+ const s=standById(id);
+ if(s){
+   s.interacoes=Array.isArray(s.interacoes)?s.interacoes:[];
+   s.interacoes.push(record);
+   if((record.result||record.status)==="Reunião"){
+     s.reunioes=Array.isArray(s.reunioes)?s.reunioes:[];
+     s.reunioes.push(record);
+   }
+ }
+}
 
 function renderToday(){
  const calls=todayCalls();
@@ -211,7 +244,7 @@ function renderToday(){
 function quickNoAnswer(id){
  const c=todayCalls().find(x=>String(x.id)===String(id)); if(c){c.done=true;c.result="Não atendeu"}
  const s=standById(id); s.estado="Follow-up"; s.followUp=addDaysKey(2); s.ultimoContacto=new Date().toISOString();
- db.history.push({id,date:new Date().toISOString(),result:"Não atendeu",summary:"Não atendeu — novo contacto agendado",followUp:s.followUp});
+ addInteraction(id,{result:"Não atendeu",summary:"Não atendeu — novo contacto agendado",followUp:s.followUp});
  save(); maybeGenerateNextBatch();
 }
 
@@ -228,6 +261,7 @@ function openLog(id){
  <label>Resumo da chamada</label>
  <textarea id="voiceText" placeholder="Ex.: Falei com o João. Usa Excel, mostrou interesse no Importool e pediu uma demo quinta-feira."></textarea>
  <button class="btn primary bigmic" id="micBtn" onclick="startDictation()">🎤 Ditar resumo</button>
+ <button class="btn green" onclick="saveRawSummary('${id}')">Guardar resumo imediato</button>
  <button class="btn" onclick="analyzeAndShow('${id}')">Analisar resumo</button>
  <div id="analysis"></div>`;
  document.getElementById("modal").classList.add("open");
@@ -250,12 +284,7 @@ function saveQuickStatus(id){
    c.done=!["Por contactar","Contactado"].includes(status);
  }
 
- db.history.push({
-   id,
-   date:new Date().toISOString(),
-   result:status,
-   summary:"Estado alterado manualmente para "+status
- });
+ addInteraction(id,{result:status,summary:"Estado alterado manualmente para "+status});
  save(); maybeGenerateNextBatch();
 } 
 
@@ -271,6 +300,18 @@ function startDictation(){
  recognition.onend=()=>btn.textContent="🎤 Ditar resumo";
  recognition.onerror=()=>{btn.textContent="🎤 Ditar resumo";alert("Não foi possível usar o microfone.")};
  recognition.start(); btn.onclick=()=>recognition.stop();
+}
+function saveRawSummary(id){
+ const t=document.getElementById("voiceText").value.trim(); if(!t)return alert("Dita ou escreve primeiro o resumo.");
+ const s=standById(id);
+ appendStandNote(s,t,"Resumo da chamada");
+ s.ultimoContacto=new Date().toISOString();
+ const inferred=analyzeText(t);
+ if(inferred.status && inferred.status!=="Contactado") s.estado=inferred.status;
+ const c=todayCalls().find(x=>String(x.id)===String(id));
+ if(c){c.done=true;c.result=s.estado||"Contactado"}
+ addInteraction(id,{result:s.estado||"Contactado",summary:t,raw:t,status:s.estado||"Contactado"});
+ save(); closeModal(); maybeGenerateNextBatch();
 }
 function analyzeText(t){
  const l=t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
@@ -329,22 +370,24 @@ function saveAnalysis(id){
  };
  Object.assign(s,{
    contacto:data.contact,interesse:data.interest,servico:data.service,objecao:data.objection,
-   estado:data.status,proximaAcao:data.next,followUp:data.followUp,ultimoContacto:new Date().toISOString(),
-   notas:[s.notas||"",raw].filter(Boolean).join("\n\n")
+   estado:data.status,proximaAcao:data.next,followUp:data.followUp,ultimoContacto:new Date().toISOString()
  });
+ appendStandNote(s,raw,data.status==="Reunião"?"Resumo da reunião":"Resumo da chamada");
  const c=todayCalls().find(x=>String(x.id)===String(id)); if(c){c.done=true;c.result=data.status}
  if(data.status==="Não atendeu"){s.estado="Follow-up";s.followUp=data.followUp||addDaysKey(2)}
  else if(data.followUp){s.followUp=data.followUp}
- db.history.push({id,date:new Date().toISOString(),...data,followUp:s.followUp||data.followUp});
+ addInteraction(id,{...data,result:data.status,summary:raw,followUp:s.followUp||data.followUp});
  save();closeModal();maybeGenerateNextBatch();
 }
 
 function renderAll(){
  const q=(document.getElementById("search").value||"").toLowerCase();
  const d=document.getElementById("district").value;
+ const st=document.getElementById("statusFilter").value;
  const list=db.stands.filter(s=>{
    const txt=[s.stand,s.cidade,s.distrito,s.telefone,s.email].join(" ").toLowerCase();
-   return (!q||txt.includes(q))&&(!d||s.distrito===d);
+   const current=s.estado||"Por contactar";
+   return (!q||txt.includes(q))&&(!d||s.distrito===d)&&(!st||current===st);
  }).slice(0,300);
  document.getElementById("allList").innerHTML=list.map(s=>`
  <div class="card" onclick="openStand('${s.id}')">
@@ -361,7 +404,9 @@ function openStand(id){
  <label>Estado</label><select id="fStatus">${["Por contactar","Contactado","Follow-up","Reunião","Proposta","Cliente","Sem interesse"].map(x=>`<option ${x===(s.estado||"Por contactar")?"selected":""}>${x}</option>`).join("")}</select>
  <label>Prioridade</label><select id="fPriority">${["Alta","Média","Baixa"].map(x=>`<option ${x===(s.prioridade||"Média")?"selected":""}>${x}</option>`).join("")}</select>
  <label>Notas</label><textarea id="fNotes">${esc(s.notas||"")}</textarea>
- <button class="btn primary" onclick="saveStand('${id}')">Guardar</button>`;
+ <button class="btn primary" onclick="saveStand('${id}')">Guardar</button>
+ <h3>Histórico de chamadas e reuniões</h3>
+ <div>${(s.interacoes||db.history.filter(h=>String(h.id)===String(id))).slice().reverse().map(h=>`<div class="history-item"><b>${esc(h.result||h.status||"Contacto")}</b><div class="muted">${new Date(h.date).toLocaleString("pt-PT")}</div><div>${esc(h.summary||h.raw||"")}</div></div>`).join("")||'<div class="muted">Sem registos.</div>'}</div>`;
  document.getElementById("modal").classList.add("open");
 }
 function saveStand(id){
@@ -410,8 +455,37 @@ function renderDrive(){
  const a=document.getElementById("driveCall");a.href=phoneHref(s.telefone);a.style.display="block";
  if("speechSynthesis"in window){speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance("Próxima chamada. "+s.stand+". "+(s.cidade||"")))}
 }
-function driveDone(){const p=pendingCalls();if(!p.length)return;const c=p[driveIndex];c.done=true;const s=standById(c.id);s.estado=s.estado==="Por contactar"?"Contactado":s.estado;s.ultimoContacto=new Date().toISOString();save();renderDrive();maybeGenerateNextBatch()}
-function driveNext(){driveIndex++;renderDrive()}
+function currentDriveCall(){const p=pendingCalls();return p.length?p[Math.min(driveIndex,p.length-1)]:null}
+function driveNoAnswer(){
+ const c=currentDriveCall(); if(!c)return;
+ quickNoAnswer(c.id);
+ document.getElementById("driveSummary").value=""; driveIndex=0; renderDrive();
+}
+let driveRecognition=null;
+function startDriveDictation(){
+ const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+ if(!SR){alert("O ditado automático não está disponível neste browser.");return}
+ driveRecognition=new SR(); driveRecognition.lang="pt-PT"; driveRecognition.interimResults=true; driveRecognition.continuous=false;
+ const btn=document.getElementById("driveMicBtn"); btn.textContent="A ouvir… toca para parar";
+ driveRecognition.onresult=e=>{document.getElementById("driveSummary").value=[...e.results].map(r=>r[0].transcript).join(" ")};
+ driveRecognition.onend=()=>btn.textContent="🎤 Ditar resumo";
+ driveRecognition.onerror=()=>{btn.textContent="🎤 Ditar resumo";alert("Não foi possível usar o microfone.")};
+ driveRecognition.start(); btn.onclick=()=>driveRecognition.stop();
+}
+function saveDriveSummary(){
+ const c=currentDriveCall(); if(!c)return;
+ const text=document.getElementById("driveSummary").value.trim();
+ if(!text)return alert("Dita ou escreve o resumo primeiro.");
+ const s=standById(c.id), a=analyzeText(text);
+ s.estado=a.status||"Contactado"; s.ultimoContacto=new Date().toISOString();
+ if(s.estado==="Follow-up" && !s.followUp)s.followUp=addDaysKey(2);
+ appendStandNote(s,text,s.estado==="Reunião"?"Resumo da reunião":"Resumo da chamada");
+ c.done=true;c.result=s.estado;
+ addInteraction(c.id,{result:s.estado,status:s.estado,summary:text,raw:text,followUp:s.followUp||""});
+ document.getElementById("driveSummary").value="";
+ save(); driveIndex=0; renderDrive(); maybeGenerateNextBatch();
+}
+function driveNext(){driveIndex++;document.getElementById("driveSummary").value="";renderDrive()}
 
 function notificationText(){
  const calls=todayCalls().filter(x=>!x.done);
