@@ -1,9 +1,9 @@
 {
-  "name": "MOTICSON CRM",
+  "name": "MOTICSON CRM — Performance Comercial",
   "short_name": "MOTICSON CRM",
-  "start_url": "./index.html",
+  "start_url": "./",
   "display": "standalone",
-  "background_color": "#0b0d12",
-  "theme_color": "#0b0d12",
-  "icons": []
+  "background_color": "#07111f",
+  "theme_color": "#07111f",
+  "description": "CRM comercial MOTICSON com fila inteligente de 6 contactos."
 }

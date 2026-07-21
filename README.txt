@@ -1,41 +1,38 @@
-MOTICSON CRM — versão 100% gratuita
+MOTICSON CRM PRO v3
 
-Esta versão:
-- inclui todos os stands da base;
-- funciona no iPhone e no Mac;
-- pode ser adicionada ao ecrã principal;
-- guarda tudo localmente no dispositivo;
-- não exige conta, servidor, App Store ou subscrição;
-- inclui 6 chamadas diárias, modo condução, pesquisa, resultados, ditado e análise automática do resumo.
+ATUALIZAÇÃO:
+1. Substituir index.html, manifest.webmanifest e sw.js no repositório GitHub.
+2. Fazer commit no branch main.
+3. Aguardar o deploy automático do Netlify.
+4. No iPhone, fechar totalmente a PWA e voltar a abrir.
 
-IMPORTANTE
-Os dados não sincronizam automaticamente entre iPhone e Mac porque isso exigiria um serviço online.
-Para passar os dados de um dispositivo para outro:
-1. Abrir a secção Backup.
-2. Exportar o ficheiro JSON.
-3. Enviar o ficheiro para o outro dispositivo.
-4. Importar o backup.
+DADOS:
+- Usa a mesma chave principal de armazenamento da versão anterior.
+- Faz migração de estruturas antigas sem apagar registos.
+- Guarda até 5 snapshots automáticos locais.
+- Continua recomendado exportar um backup JSON regularmente.
 
-INSTALAÇÃO NO IPHONE
-Para funcionar corretamente como Web App, o ficheiro deve ser aberto através de um endereço web.
-Pode alojá-lo gratuitamente em GitHub Pages, Netlify ou Cloudflare Pages.
-Depois:
-1. Abrir o endereço no Safari.
-2. Tocar em Partilhar.
-3. Escolher “Adicionar ao ecrã principal”.
+PRINCIPAIS ALTERAÇÕES:
+- Mantém sempre 6 contactos ativos; cada conclusão é substituída automaticamente.
+- Ficha do stand acessível diretamente na aba Hoje.
+- Modo condução com ditado, Não atendeu, Contactado, Reunião e Follow-up.
+- Resumos ficam nas notas e na timeline individual.
+- Filtros por distrito, estado, prioridade e importadores.
+- Ordenação por prioridade, atividade recente e nome.
+- Dashboard com KPIs, gráfico de 7 dias, funil e insights.
+- Backup/importação e migração de dados reforçados.
 
-O reconhecimento por voz depende do suporte do Safari. Quando não estiver disponível, o resumo pode ser escrito manualmente.
+VERSÃO 4 — HISTÓRICO E SINCRONIZAÇÃO
+- Nova página Histórico agrupada por dia, com notas, horas, resultados e follow-ups.
+- Pesquisa e filtros por data, período e resultado.
+- Cada registo abre diretamente a ficha do stand.
+- Todas as páginas usam a mesma base de dados e são atualizadas após cada alteração.
+- Sincronização entre separadores/janelas do mesmo dispositivo e atualização ao voltar à app.
+- Importação de backups passa sempre pela migração segura da base de dados.
 
-ATUALIZAÇÃO FOLLOW-UPS E ALERTAS
-- Ao concluir as 6 chamadas, a aplicação gera automaticamente um novo grupo de até 6 stands.
-- “Não atendeu” agenda automaticamente um follow-up para 2 dias depois.
-- Follow-ups vencidos têm prioridade na lista diária.
-- O botão “Ativar alertas das 10h” ativa notificações locais.
-- Por ser uma aplicação gratuita sem servidor, a notificação das 10h é apresentada quando a app estiver aberta ou quando for iniciada depois das 10h. Alertas exatos em segundo plano exigem um serviço de push/backend.
 
-ATUALIZAÇÃO — MODO CONDUÇÃO E HISTÓRICO
-- No modo condução é possível marcar imediatamente “Não atendeu”.
-- É possível ditar o resumo e guardar/concluir sem sair do modo condução.
-- O resumo é guardado nas notas do stand com data e hora.
-- Cada chamada e reunião fica registada no histórico individual do stand.
-- Em “Todos” foi adicionado filtro por estado comercial.
+VERSÃO v5 — IDENTIDADE MOTICSON
+- Redesign integral com identidade visual tecnológica MOTICSON.
+- Nova assinatura visual, símbolo próprio, navegação, cartões, métricas e modo condução.
+- Paleta dark navy com verde tecnológico e azul elétrico.
+- Mantém a mesma base de dados e todas as funcionalidades/sincronização da v4.
