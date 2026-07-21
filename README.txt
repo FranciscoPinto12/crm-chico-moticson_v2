@@ -25,3 +25,10 @@ Depois:
 3. Escolher “Adicionar ao ecrã principal”.
 
 O reconhecimento por voz depende do suporte do Safari. Quando não estiver disponível, o resumo pode ser escrito manualmente.
+
+ATUALIZAÇÃO FOLLOW-UPS E ALERTAS
+- Ao concluir as 6 chamadas, a aplicação gera automaticamente um novo grupo de até 6 stands.
+- “Não atendeu” agenda automaticamente um follow-up para 2 dias depois.
+- Follow-ups vencidos têm prioridade na lista diária.
+- O botão “Ativar alertas das 10h” ativa notificações locais.
+- Por ser uma aplicação gratuita sem servidor, a notificação das 10h é apresentada quando a app estiver aberta ou quando for iniciada depois das 10h. Alertas exatos em segundo plano exigem um serviço de push/backend.

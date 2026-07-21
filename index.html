@@ -65,6 +65,7 @@ small{color:var(--muted)}
     <div class="progress"><div id="progressBar" style="width:0%"></div></div>
     <div class="actions"><button class="btn primary" onclick="generateDaily()">Gerar 6 chamadas</button></div>
   </div>
+  <div id="dailyAlert"></div>
   <div id="dailyList"></div>
 </section>
 
@@ -133,46 +134,53 @@ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
  b.classList.add("active"); document.getElementById(b.dataset.view).classList.add("active");
 });
 
-function generateDaily(){
+function addDaysKey(days){
+ const d=new Date(); d.setDate(d.getDate()+days); return d.toISOString().slice(0,10);
+}
+function generateDaily(forceNewBatch=false){
  const today=todayKey();
+ if(forceNewBatch){
+   db.daily=db.daily.filter(x=>x.date!==today);
+ }
  const current=db.daily.filter(x=>x.date===today).sort((a,b)=>a.order-b.order);
-
- // Transporta para hoje todas as chamadas pendentes de dias anteriores.
- const currentIds=new Set(current.map(x=>String(x.id)));
- const carry=[];
- db.daily
-   .filter(x=>x.date<today && !x.done)
-   .sort((a,b)=>a.date.localeCompare(b.date) || a.order-b.order)
-   .forEach(x=>{
-     const id=String(x.id);
-     if(!currentIds.has(id) && !carry.some(c=>String(c.id)===id)) carry.push(x);
-   });
-
- // Remove as versões antigas das pendentes que foram transportadas.
- const carryIds=new Set(carry.map(x=>String(x.id)));
- db.daily=db.daily.filter(x=>!(x.date<today && !x.done && carryIds.has(String(x.id))));
-
  const todayItems=[...current];
- carry.forEach(x=>{
-   if(todayItems.length<6){
-     todayItems.push({date:today,id:x.id,done:false,result:x.result||"",order:todayItems.length});
-   }
+ const selectedIds=new Set(todayItems.map(x=>String(x.id)));
+
+ // Primeiro entram follow-ups vencidos ou marcados para hoje.
+ const dueFollowUps=db.stands
+   .filter(s=>s.telefone && s.followUp && s.followUp<=today && !selectedIds.has(String(s.id)) && !["Cliente","Sem interesse"].includes(s.estado))
+   .sort((a,b)=>(a.followUp||'').localeCompare(b.followUp||'') || priority(a)-priority(b));
+ dueFollowUps.slice(0,Math.max(0,6-todayItems.length)).forEach(s=>{
+   todayItems.push({date:today,id:s.id,done:false,result:"Follow-up",order:todayItems.length,isFollowUp:true});
+   selectedIds.add(String(s.id));
  });
 
- // Não volta a selecionar stands que já tenham sido incluídos anteriormente.
- const assignedIds=new Set(db.daily.map(x=>String(x.id)));
- todayItems.forEach(x=>assignedIds.add(String(x.id)));
+ // Depois entram stands novos, que nunca foram chamados nem incluídos antes.
+ const usedIds=new Set([
+   ...db.daily.map(x=>String(x.id)),
+   ...db.history.map(x=>String(x.id))
+ ]);
+ todayItems.forEach(x=>usedIds.add(String(x.id)));
  const candidates=[...db.stands]
-   .filter(s=>s.telefone && !["Cliente","Sem interesse"].includes(s.estado) && !assignedIds.has(String(s.id)))
+   .filter(s=>s.telefone && !["Cliente","Sem interesse"].includes(s.estado) && !s.followUp && !usedIds.has(String(s.id)))
    .sort((a,b)=>priority(a)-priority(b) || (a.ordem??999999)-(b.ordem??999999));
-
  candidates.slice(0,Math.max(0,6-todayItems.length)).forEach(s=>{
-   todayItems.push({date:today,id:s.id,done:false,result:"",order:todayItems.length});
+   todayItems.push({date:today,id:s.id,done:false,result:"",order:todayItems.length,isFollowUp:false});
  });
 
  db.daily=db.daily.filter(x=>x.date!==today);
  db.daily.push(...todayItems.map((x,i)=>({...x,date:today,order:i})));
  save();
+}
+function maybeGenerateNextBatch(){
+ const calls=todayCalls();
+ if(calls.length>=6 && calls.every(x=>x.done)){
+   setTimeout(()=>{
+     generateDaily(true);
+     alert("As 6 chamadas foram concluídas. Foi gerado um novo grupo de até 6 stands.");
+     checkDailyNotification(true);
+   },150);
+ }
 }
 function priority(s){
  if(s.followUp && s.followUp<=todayKey()) return -1;
@@ -185,6 +193,13 @@ function renderToday(){
  const calls=todayCalls();
  const done=calls.filter(x=>x.done).length;
  document.getElementById("todayCount").textContent=`${done}/6`;
+ const due=db.stands.filter(s=>s.followUp && s.followUp<=todayKey() && !["Cliente","Sem interesse"].includes(s.estado));
+ const alertBox=document.getElementById("dailyAlert");
+ if(due.length){
+   alertBox.innerHTML=`<div class="card"><b>🔁 Follow-ups de hoje: ${due.length}</b><div class="muted">${due.slice(0,4).map(s=>esc(s.stand)).join(" · ")}${due.length>4?" · …":""}</div></div>`;
+ } else {
+   alertBox.innerHTML=`<div class="card"><b>📞 Hoje tens ${calls.filter(x=>!x.done).length} stands para ligar</b><div class="muted">Conclui o grupo atual e serão gerados até 6 novos.</div><div class="actions"><button class="btn" onclick="enableNotifications()">Ativar alertas das 10h</button></div></div>`;
+ }
  document.getElementById("progressBar").style.width=(done/6*100)+"%";
  document.getElementById("dailyList").innerHTML=calls.length?calls.map(c=>{
    const s=standById(c.id); if(!s)return "";
@@ -195,9 +210,9 @@ function renderToday(){
 }
 function quickNoAnswer(id){
  const c=todayCalls().find(x=>String(x.id)===String(id)); if(c){c.done=true;c.result="Não atendeu"}
- const s=standById(id); s.estado="Contactado"; s.ultimoContacto=new Date().toISOString();
- db.history.push({id,date:new Date().toISOString(),result:"Não atendeu",summary:"Não atendeu"});
- save();
+ const s=standById(id); s.estado="Follow-up"; s.followUp=addDaysKey(2); s.ultimoContacto=new Date().toISOString();
+ db.history.push({id,date:new Date().toISOString(),result:"Não atendeu",summary:"Não atendeu — novo contacto agendado",followUp:s.followUp});
+ save(); maybeGenerateNextBatch();
 }
 
 function openLog(id){
@@ -223,7 +238,8 @@ function saveQuickStatus(id){
  const c=todayCalls().find(x=>String(x.id)===String(id));
 
  if(status==="Não atendeu"){
-   s.estado="Contactado";
+   s.estado="Follow-up";
+   s.followUp=addDaysKey(2);
  } else {
    s.estado=status;
  }
@@ -240,7 +256,7 @@ function saveQuickStatus(id){
    result:status,
    summary:"Estado alterado manualmente para "+status
  });
- save();
+ save(); maybeGenerateNextBatch();
 } 
 
 function closeModal(){document.getElementById("modal").classList.remove("open")}
@@ -317,8 +333,10 @@ function saveAnalysis(id){
    notas:[s.notas||"",raw].filter(Boolean).join("\n\n")
  });
  const c=todayCalls().find(x=>String(x.id)===String(id)); if(c){c.done=true;c.result=data.status}
- db.history.push({id,date:new Date().toISOString(),...data});
- save();closeModal();
+ if(data.status==="Não atendeu"){s.estado="Follow-up";s.followUp=data.followUp||addDaysKey(2)}
+ else if(data.followUp){s.followUp=data.followUp}
+ db.history.push({id,date:new Date().toISOString(),...data,followUp:s.followUp||data.followUp});
+ save();closeModal();maybeGenerateNextBatch();
 }
 
 function renderAll(){
@@ -361,6 +379,7 @@ function saveStand(id){
  }
  save();
  closeModal();
+ maybeGenerateNextBatch();
 }
 function renderResults(){
  const vals={
@@ -391,9 +410,30 @@ function renderDrive(){
  const a=document.getElementById("driveCall");a.href=phoneHref(s.telefone);a.style.display="block";
  if("speechSynthesis"in window){speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance("Próxima chamada. "+s.stand+". "+(s.cidade||"")))}
 }
-function driveDone(){const p=pendingCalls();if(!p.length)return;const c=p[driveIndex];c.done=true;const s=standById(c.id);s.estado=s.estado==="Por contactar"?"Contactado":s.estado;s.ultimoContacto=new Date().toISOString();save();renderDrive()}
+function driveDone(){const p=pendingCalls();if(!p.length)return;const c=p[driveIndex];c.done=true;const s=standById(c.id);s.estado=s.estado==="Por contactar"?"Contactado":s.estado;s.ultimoContacto=new Date().toISOString();save();renderDrive();maybeGenerateNextBatch()}
 function driveNext(){driveIndex++;renderDrive()}
 
+function notificationText(){
+ const calls=todayCalls().filter(x=>!x.done);
+ const due=db.stands.filter(s=>s.followUp && s.followUp<=todayKey() && !["Cliente","Sem interesse"].includes(s.estado));
+ if(due.length) return `Tens de voltar a ligar a ${due.length} stand${due.length===1?"":"s"}: ${due.slice(0,3).map(s=>s.stand).join(", ")}${due.length>3?"…":""}`;
+ if(calls.length) return `Hoje tens ${calls.length} stand${calls.length===1?"":"s"} para ligar.`;
+ return "Não tens chamadas pendentes neste momento.";
+}
+async function enableNotifications(){
+ if(!("Notification" in window)){alert("Este dispositivo não suporta notificações do navegador.");return}
+ const permission=await Notification.requestPermission();
+ if(permission==="granted"){localStorage.setItem("moticson_notifications","on");alert("Alertas ativados. A app mostrará o aviso das 10h quando estiver aberta ou for iniciada.");checkDailyNotification(true)}
+ else alert("Não foi possível ativar as notificações.");
+}
+function checkDailyNotification(force=false){
+ if(!("Notification" in window) || Notification.permission!=="granted" || localStorage.getItem("moticson_notifications")!=="on") return;
+ const now=new Date(), key=todayKey(), last=localStorage.getItem("moticson_notification_date");
+ if((force || now.getHours()>=10) && last!==key){
+   new Notification("MOTICSON CRM",{body:notificationText(),icon:"./icon-192.png"});
+   localStorage.setItem("moticson_notification_date",key);
+ }
+}
 function exportData(){
  const blob=new Blob([JSON.stringify(db,null,2)],{type:"application/json"});
  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="MOTICSON_CRM_backup_"+todayKey()+".json";a.click();URL.revokeObjectURL(a.href);
@@ -405,6 +445,8 @@ function resetData(){if(confirm("Apagar alterações e repor a base original?"))
 
 if("serviceWorker"in navigator) navigator.serviceWorker.register("sw.js");
 if(!todayCalls().length) generateDaily(); else renderAllViews();
+checkDailyNotification();
+setInterval(checkDailyNotification,60000);
 </script>
 
 <style>
