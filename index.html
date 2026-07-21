@@ -134,11 +134,44 @@ document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
 });
 
 function generateDaily(){
- const existing=new Set(db.daily.filter(x=>x.date===todayKey()).map(x=>x.id));
- const candidates=[...db.stands].filter(s=>s.telefone && !["Cliente","Sem interesse"].includes(s.estado))
-   .sort((a,b)=>priority(a)-priority(b));
- db.daily=db.daily.filter(x=>x.date!==todayKey());
- candidates.slice(0,6).forEach((s,i)=>db.daily.push({date:todayKey(),id:s.id,done:false,result:"",order:i}));
+ const today=todayKey();
+ const current=db.daily.filter(x=>x.date===today).sort((a,b)=>a.order-b.order);
+
+ // Transporta para hoje todas as chamadas pendentes de dias anteriores.
+ const currentIds=new Set(current.map(x=>String(x.id)));
+ const carry=[];
+ db.daily
+   .filter(x=>x.date<today && !x.done)
+   .sort((a,b)=>a.date.localeCompare(b.date) || a.order-b.order)
+   .forEach(x=>{
+     const id=String(x.id);
+     if(!currentIds.has(id) && !carry.some(c=>String(c.id)===id)) carry.push(x);
+   });
+
+ // Remove as versões antigas das pendentes que foram transportadas.
+ const carryIds=new Set(carry.map(x=>String(x.id)));
+ db.daily=db.daily.filter(x=>!(x.date<today && !x.done && carryIds.has(String(x.id))));
+
+ const todayItems=[...current];
+ carry.forEach(x=>{
+   if(todayItems.length<6){
+     todayItems.push({date:today,id:x.id,done:false,result:x.result||"",order:todayItems.length});
+   }
+ });
+
+ // Não volta a selecionar stands que já tenham sido incluídos anteriormente.
+ const assignedIds=new Set(db.daily.map(x=>String(x.id)));
+ todayItems.forEach(x=>assignedIds.add(String(x.id)));
+ const candidates=[...db.stands]
+   .filter(s=>s.telefone && !["Cliente","Sem interesse"].includes(s.estado) && !assignedIds.has(String(s.id)))
+   .sort((a,b)=>priority(a)-priority(b) || (a.ordem??999999)-(b.ordem??999999));
+
+ candidates.slice(0,Math.max(0,6-todayItems.length)).forEach(s=>{
+   todayItems.push({date:today,id:s.id,done:false,result:"",order:todayItems.length});
+ });
+
+ db.daily=db.daily.filter(x=>x.date!==today);
+ db.daily.push(...todayItems.map((x,i)=>({...x,date:today,order:i})));
  save();
 }
 function priority(s){
@@ -388,7 +421,7 @@ if(!todayCalls().length) generateDaily(); else renderAllViews();
  </div>
 </div>
 <script>
-const APP_PIN="2607";
+const APP_PIN="2305";
 function unlock(){
  const v=document.getElementById("pinInput").value;
  if(v===APP_PIN){document.getElementById("lock").remove();}
